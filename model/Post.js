@@ -60,7 +60,7 @@ class Post {
     const result = await query(queryText, params);
     return result.rows;
   }
-  // Get total count for pagination
+  // Get total count of posts for pagination
   static async count(filters = {}) {
     const { status, userId, search, tag } = filters;
     let queryText = `
@@ -96,7 +96,7 @@ class Post {
 
   // Get single post by slug
   static async findBySlug(slug) {
-    const result = await db.query(
+    const result = await query(
       `SELECT 
         posts.*,
         users.username AS author,
@@ -290,7 +290,7 @@ class Post {
   }
 
   // Delete post
-  static async delete(slug) {
+  static async deletePost(slug) {
     const result = await db.query(
       "DELETE FROM posts WHERE slug = $1 RETURNING id",
       [slug],
