@@ -1,21 +1,21 @@
 import express from 'express'
 import Tag from '../model/Tag.js'
 import ApiResponse from '../utils/response.js'
-
+import { asyncHandler } from '../utils/asyncHandler.js';
 const router = express.Router();
 
 // GET /api/tags - Get all tags
-router.get('/',async(req,res,next)=>{
+router.get('/',asyncHandler(async(req,res,next)=>{
    try {
      const tags = await Tag.findAllTags();
      ApiResponse.success(res, { tags, count: tags.length });
    } catch (error) {
      next(error);
    } 
-})
+}))
 
 // GET /api/tags/:slug - Get tag by slug
-router.get("/:slug", async (req, res, next) => {
+router.get("/:slug", asyncHandler(async (req, res, next) => {
   try {
     const { slug } = req.params;
     const tag = await Tag.findTagBySlug(slug);
@@ -27,10 +27,10 @@ router.get("/:slug", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-});
+}));
 
 // POST /api/tags - Create tag
-router.post('/', async (req, res, next) => {
+router.post('/', asyncHandler(async (req, res, next) => {
 try {
 const { name, description } = req.body;
 if (!name) {
@@ -45,10 +45,10 @@ return ApiResponse.error(res, 'Tag with this name already exists', 409);
 }
 next(error);
 }
-});
+}));
 
 // PUT /api/tags/:slug - Update tag
-router.put('/:slug', async (req, res, next) => {
+router.put('/:slug',asyncHandler( async (req, res, next) => {
 try {
 const { slug } = req.params;
 const { name, description } = req.body;
@@ -62,10 +62,10 @@ ApiResponse.success(res, { tag }, 'Tag updated successfully');
 } catch (error) {
 next(error);
 }
-});
+}));
 
 // DELETE /api/tags/:slug - Delete tag
-router.delete('/:slug', async (req, res, next) => {
+router.delete('/:slug',asyncHandler( async (req, res, next) => {
 try {
 const { slug } = req.params;
 const tag = await Tag.deleteTag(slug);
@@ -78,6 +78,6 @@ ApiResponse.noContent(res);
 } catch (error) {
 next(error);
 }
-});
+}));
 
 export default router;

@@ -14,42 +14,41 @@ class Post {
         posts.view_count,
         posts.like_count,
         posts.published_at,
-        posts.created_at,
         users.username AS author,
         users.avatar_url AS author_avatar,
-        COUNT(DISTINCT comments.id) AS comment_count,
+        (SELECT COUNT(*) FROM comments WHERE comments.post_id = posts.id) AS comment_count,
         json_agg(DISTINCT jsonb_build_object('id',tags.id,'name',tags.name)) FILTER (WHERE tags.id IS NOT NULL)
-        AS tags FROM posts INNER JOIN users ON posts.user_id = users.id LEFT JOIN comments ON posts.id = comments.post_id LEFT JOIN post_tags ON posts.id = post_tags.post_id
+        AS tags,COUNT(*) OVER() as total_count FROM posts INNER JOIN users ON posts.user_id = users.id LEFT JOIN comments ON posts.id = comments.post_id LEFT JOIN post_tags ON posts.id = post_tags.post_id
         LEFT JOIN tags ON post_tags.tag_id = tags.id WHERE 1=1`;
     const params = [];
     let paramCount = 0;
     // Add filters
     if (status) {
       paramCount++;
-      queryText += `AND posts.status = $${paramCount}`;
+      queryText += ` AND posts.status = $${paramCount}`;
       params.push(status);
     }
     if (userId) {
       paramCount++;
-      queryText += `AND posts.user_id = $${paramCount}`;
+      queryText += ` AND posts.user_id = $${paramCount}`;
       params.push(userId);
     }
     if (search) {
       paramCount++;
-      queryText += `AND posts.search_vector @@ plainto_tsquery('english',$${paramCount})`;
+      queryText += ` AND posts.search_vector @@ plainto_tsquery('english',$${paramCount})`;
       params.push(search);
     }
     if (tag) {
       paramCount++;
-      queryText += `AND tags.slug = $${paramCount}`;
+      queryText += ` AND posts.id IN (SELECT post_tags.post_id FROM post_tags JOIN tags AS t ON post_tags.tag_id = t.id WHERE t.slug = $${paramCount})`;
       params.push(tag);
     }
-    queryText += `GROUP BY posts.id,users.username,users.avatar_url`;
-    queryText += `ORDER BY posts.created_at DESC`;
+    queryText += ` GROUP BY posts.id,users.username,users.avatar_url`;
+    queryText += ` ORDER BY posts.published_at DESC`;
     // Add pagination
     if (limit) {
       paramCount++;
-      queryText += `LIMIT $${paramCount}`;
+      queryText += ` LIMIT $${paramCount}`;
       params.push(limit);
     }
     if (offset) {
@@ -58,41 +57,13 @@ class Post {
       params.push(offset);
     }
     const result = await query(queryText, params);
-    return result.rows;
+      return {
+        posts: result.rows,
+        total:
+          result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0,
+      };
   }
-  // Get total count of posts for pagination
-  static async count(filters = {}) {
-    const { status, userId, search, tag } = filters;
-    let queryText = `
-        SELECT COUNT(DISTINCT posts.id) AS total FROM posts LEFT JOIN post_tags ON posts.id = post_tags.post_id LEFT JOIN tags ON post_tags.tag_id = tags.id WHERE 1=1`;
-    const params = [];
-    let paramCount = 0;
-    if (status) {
-      paramCount++;
-      queryText += ` AND posts.status = $${paramCount}`;
-      params.push(status);
-    }
-
-    if (userId) {
-      paramCount++;
-      queryText += ` AND posts.user_id = $${paramCount}`;
-      params.push(userId);
-    }
-
-    if (search) {
-      paramCount++;
-      queryText += ` AND posts.search_vector @@ plainto_tsquery('english', $${paramCount})`;
-      params.push(search);
-    }
-
-    if (tag) {
-      paramCount++;
-      queryText += ` AND tags.slug = $${paramCount}`;
-      params.push(tag);
-    }
-    const result = await query(queryText, params);
-    return parseInt(result.rows[0].total);
-  }
+ 
 
   // Get single post by slug
   static async findBySlug(slug) {
@@ -145,7 +116,7 @@ class Post {
         u.username,
         u.avatar_url,
         ct.depth + 1,
-        ct.path || c.id)
+        ct.path || c.id
         FROM comments c
         INNER JOIN users u ON c.user_id = u.id INNER JOIN comment_tree ct ON c.parent_id = ct.id
         WHERE ct.depth <5)
@@ -183,18 +154,7 @@ class Post {
       const post = postResult.rows[0];
       // Add tags
       if (tagSlugs.length > 0) {
-        for (const tagSlug of tagSlugs) {
-          const tagResult = await client.query(
-            "SELECT id FROM tags WHERE slug = $1",
-            [tagSlug],
-          );
-          if (tagResult.rows.length > 0) {
-            await client.query(
-              "INSERT INTO post_tags(post_id,tag_id) VALUES ($1,$2)",
-              [post.id, tagResult.rows[0].id],
-            );
-          }
-        }
+        await client.query(`INSERT INTO post_tags (post_id,tag_id) SELECT $1,id FROM tags WHERE slug = ANY($2)`,[post.id,tagSlugs])
       }
       return post;
     });
@@ -272,17 +232,12 @@ class Post {
           post.id,
         ]);
         // Add new tags
-        for (const tagSlug of tagSlugs) {
-          const tagResult = await client.query(
-            "SELECT id FROM tags WHERE slug = $1",
-            [tagSlug],
+        if (tagSlugs.length > 0) {
+          await client.query(
+            `INSERT INTO post_tags (post_id, tag_id)
+             SELECT $1, id FROM tags WHERE slug = ANY($2)`,
+            [post.id, tagSlugs],
           );
-          if (tagResult.rows.length > 0) {
-            await client.query(
-              "INSERT INTO post_tags (post_id, tag_id) VALUES ($1, $2)",
-              [post.id, tagResult.rows[0].id],
-            );
-          }
         }
       }
       return post;
@@ -291,7 +246,7 @@ class Post {
 
   // Delete post
   static async deletePost(slug) {
-    const result = await db.query(
+    const result = await query(
       "DELETE FROM posts WHERE slug = $1 RETURNING id",
       [slug],
     );
@@ -300,7 +255,7 @@ class Post {
   }
   // Increment view count
   static async incrementViews(slug) {
-    await db.query(
+    await query(
       "UPDATE posts SET view_count = view_count + 1 WHERE slug = $1",
       [slug],
     );
@@ -308,7 +263,7 @@ class Post {
   // Like/Unlike post
   static async toggleLike(slug, increment = true) {
     const operator = increment ? "+" : "-";
-    const result = await db.query(
+    const result = await query(
       `UPDATE posts SET like_count = like_count ${operator} 1 WHERE slug = $1 RETURNING like_count`,
       [slug],
     );

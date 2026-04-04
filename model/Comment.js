@@ -15,7 +15,7 @@ class Comment {
   // Create comment
   static async createComment({ post_id, user_id, content, parent_id = null }) {
     const result = await query(
-      `INSERT INTO comments (post_id,user_id) VALUES ($1,$2,$3,$4) RETURNING *`,
+      `INSERT INTO comments (post_id,user_id,content,parent_id) VALUES ($1,$2,$3,$4) RETURNING *`,
       [post_id, user_id, content, parent_id],
     );
     return result.rows[0];
@@ -27,11 +27,13 @@ class Comment {
       `UPDATE comments SET content = $1,is_edited = true WHERE id = $2 RETURNING *`,
       [content, id],
     );
-    return result.rows[0];
+    if(!result.rows[0]){
+      throw new Error('Comment not found!')
+    }
   }
   // Delete comment
   static async deleteComment(id) {
-    const result = await db.query(
+    const result = await query(
       "DELETE FROM comments WHERE id = $1 RETURNING id",
       [id],
     );

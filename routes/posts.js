@@ -5,9 +5,10 @@ import Post from '../model/Post.js'
 import Comment from '../model/Comment.js'
 import Pagination from '../utils/pagination.js'
 import ApiResponse from '../utils/response.js'
+import { asyncHandler } from '../utils/asyncHandler.js';
 
 // GET /api/posts - List posts with filters and pagination
-router.get('/',async(req,res,next)=>{
+router.get('/',asyncHandler(async(req,res,next)=>{
     try {
         const {page = 1,limit = 10,status,userId,search,tag} = req.query;
         const {limit:pLimit,offset,page:pPage} = Pagination.paginate(page,limit);
@@ -19,38 +20,39 @@ router.get('/',async(req,res,next)=>{
             search,
             tag
         }
-        const [posts,totalCount] = await Promise.all([Post.findAll(filters),Post.count({status,userId,search,tag})])
-        const response = Pagination.buildResponse(posts,totalCount,pPage,pLimit)
+        const {posts,total} = await Post.findAll(filters)
+        const response = Pagination.buildResponse(posts,total,pPage,pLimit)
         ApiResponse.success(res,response)
     } catch (error) {
         next(error)
     }
-})
+}))
 
 // GET /api/posts/:slug - Get single post
-router.get('/:slug',async(req,res,next)=>{
+router.get('/:slug',asyncHandler(async(req,res,next)=>{
     try {
         const { slug } = req.params;
         const { includeComments } = req.query;
         let post;
         if (includeComments) {
-          post = Post.findWithComments(slug);
+          post = await Post.findWithComments(slug);
         } else {
-          post = Post.findBySlug(slug);
+          post = await Post.findBySlug(slug);
         }
         if (!post) {
           return ApiResponse.error(res, "Post not found", 404);
         }
+        
         // Increment view count
         await Post.incrementViews(slug);
         ApiResponse.success(res,{post})
     } catch (error) {
         next(error)    
     }
-})
+}))
 
 // POST /api/posts - Create post
-router.post('/', async (req, res, next) => {
+router.post('/', asyncHandler(async (req, res, next) => {
   try {
     const { title, content, excerpt, featured_image, status, tags } = req.body;
     
@@ -70,7 +72,7 @@ router.post('/', async (req, res, next) => {
         );
     }
 
-    const post = await Post.create(
+    const post = await Post.createPost(
       { user_id, title, content, excerpt, featured_image, status },
       tags || []
     );
@@ -82,15 +84,15 @@ router.post('/', async (req, res, next) => {
     }
     next(error);
   }
-});
+}));
 
 // PUT /api/posts/:slug - Update post
-router.put('/:slug', async (req, res, next) => {
+router.put('/:slug', asyncHandler(async (req, res, next) => {
   try {
     const { slug } = req.params;
     const { title, content, excerpt, featured_image, status, tags } = req.body;
     
-    const post = await Post.update(
+    const post = await Post.updatePost(
       slug,
       { title, content, excerpt, featured_image, status },
       tags
@@ -103,14 +105,14 @@ router.put('/:slug', async (req, res, next) => {
     }
     next(error);
   }
-});
+}));
 
 // DELETE /api/posts/:slug - Delete post
-router.delete('/:slug', async (req, res, next) => {
+router.delete('/:slug', asyncHandler(async (req, res, next) => {
   try {
     const { slug } = req.params;
     
-    const post = await Post.delete(slug);
+    const post = await Post.deletePost(slug);
     
     if (!post) {
       return ApiResponse.error(res, 'Post not found', 404);
@@ -120,10 +122,10 @@ router.delete('/:slug', async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-});
+}));
 
 // POST /api/posts/:slug/like - Like post
-router.post('/:slug/like', async (req, res, next) => {
+router.post('/:slug/like', asyncHandler(async (req, res, next) => {
   try {
     const { slug } = req.params;
     
@@ -137,11 +139,11 @@ router.post('/:slug/like', async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-});
+}));
 
 // POST /api/posts/:slug/comments - Add comment to post
 
-router.post('/:slug/comments',async(req,res,next)=>{
+router.post('/:slug/comments',asyncHandler(async(req,res,next)=>{
     try {
       const {slug} = req.params;
       const {content,parent_id} = req.body;
@@ -160,7 +162,7 @@ router.post('/:slug/comments',async(req,res,next)=>{
        if (!user_id) {
          return ApiResponse.error(res, "User id is required!", 400);
        }
-       const comment = await Comment.create({
+       const comment = await Comment.createComment({
          post_id: post.id,
          user_id,
          content,
@@ -171,6 +173,6 @@ router.post('/:slug/comments',async(req,res,next)=>{
     } catch (error) {
         next(error)
     }
-})
+}))
 
 export default router;

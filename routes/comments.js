@@ -1,11 +1,11 @@
 import express from 'express';
 import ApiResponse from "../utils/response.js";
 import Comment from "../model/Comment.js";
-
+import { asyncHandler } from '../utils/asyncHandler.js';
 const router = express.Router()
 
 // PUT /api/comments/:id - Update comment
-router.put('/:id', async (req, res, next) => {
+router.put('/:id', asyncHandler(async (req, res, next) => {
   try {
     const { id } = req.params;
     const { content } = req.body;
@@ -24,10 +24,10 @@ router.put('/:id', async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-});
+}));
 
 // DELETE /api/comments/:id - Delete comment
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', asyncHandler(async (req, res, next) => {
   try {
     const { id } = req.params;
     
@@ -41,6 +41,6 @@ router.delete('/:id', async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-});
+}));
 
 export default router;
