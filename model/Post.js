@@ -57,13 +57,11 @@ class Post {
       params.push(offset);
     }
     const result = await query(queryText, params);
-      return {
-        posts: result.rows,
-        total:
-          result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0,
-      };
+    return {
+      posts: result.rows,
+      total: result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0,
+    };
   }
- 
 
   // Get single post by slug
   static async findBySlug(slug) {
@@ -154,7 +152,10 @@ class Post {
       const post = postResult.rows[0];
       // Add tags
       if (tagSlugs.length > 0) {
-        await client.query(`INSERT INTO post_tags (post_id,tag_id) SELECT $1,id FROM tags WHERE slug = ANY($2)`,[post.id,tagSlugs])
+        await client.query(
+          `INSERT INTO post_tags (post_id,tag_id) SELECT $1,id FROM tags WHERE slug = ANY($2)`,
+          [post.id, tagSlugs],
+        );
       }
       return post;
     });
@@ -261,14 +262,44 @@ class Post {
     );
   }
   // Like/Unlike post
-  static async toggleLike(slug, increment = true) {
-    const operator = increment ? "+" : "-";
+  static async toggleLike(slug, userId) {
+    // Check if user already liked this post
+    const existing = await query(
+      `SELECT 1 FROM post_likes
+     JOIN posts ON posts.id = post_likes.post_id
+     WHERE posts.slug = $1 AND post_likes.user_id = $2`,
+      [slug, userId],
+    );
+
+    const liked = existing.rows.length === 0; // true = we're about to like it
+
+    if (liked) {
+      await query(
+        `INSERT INTO post_likes (post_id, user_id)
+       VALUES ((SELECT id FROM posts WHERE slug = $1), $2)`,
+        [slug, userId],
+      );
+    } else {
+      await query(
+        `DELETE FROM post_likes
+       WHERE post_id = (SELECT id FROM posts WHERE slug = $1)
+       AND user_id = $2`,
+        [slug, userId],
+      );
+    }
+
+    // Derive count from real data instead of storing a number
     const result = await query(
-      `UPDATE posts SET like_count = like_count ${operator} 1 WHERE slug = $1 RETURNING like_count`,
+      `SELECT COUNT(*) AS like_count FROM post_likes
+     JOIN posts ON posts.id = post_likes.post_id
+     WHERE posts.slug = $1`,
       [slug],
     );
 
-    return result.rows[0];
+    return {
+      like_count: result.rows[0].like_count,
+      liked, // tells the frontend whether the user just liked or unliked
+    };
   }
 }
 

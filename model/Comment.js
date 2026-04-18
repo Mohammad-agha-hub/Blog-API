@@ -1,6 +1,17 @@
 import { query } from "../config/db.js";
 
 class Comment {
+  // Get existing comment
+  static async findExisting(id){
+    const result = await query('SELECT * FROM comments WHERE id = $1',[id])
+    if(result.rows.length === 0){
+      return res.status(404).json({
+        success: false,
+        message: "Comment not found",
+      });
+    }
+    return result.rows;
+  }
   // Get comments for a post
   static async findByPost(postId) {
     if (!postId) {
@@ -11,6 +22,17 @@ class Comment {
       [postId],
     );
     return result.rows;
+  }
+  // Get comment with post info
+  static async getCommentWithPostInfo(id){
+    const result = await query(`SELECT comments.*,posts.user_id as post_author_id FROM comments INNER JOIN posts ON comments.post_id = posts.id WHERE comments.id = $1`,[id])
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Comment not found",
+      });
+    }
+    return result.rows[0];
   }
   // Create comment
   static async createComment({ post_id, user_id, content, parent_id = null }) {

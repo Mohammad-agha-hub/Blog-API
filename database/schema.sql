@@ -1,4 +1,7 @@
 -- Blog API Schema
+DROP TABLE IF EXISTS refresh_tokens CASCADE;
+DROP TABLE IF EXISTS password_resets CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
 
 -- Users table
 CREATE TABLE users(
@@ -8,10 +11,35 @@ CREATE TABLE users(
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user','author','admin')),
     bio TEXT,
-    avatar_url VARCHAR(255),
+    isVerified BOOLEAN DEFAULT false,
+    verification_token VARCHAR(255),
     is_active BOOLEAN DEFAULT true,
+    last_login TIMESTAMP,
+    failed_login_attempts INTEGER DEFAULT 0,
+    locked_until TIMESTAMP,
+    avatar_url VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Refresh tokens for JWT
+CREATE TABLE refresh_tokens (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token VARCHAR(500) UNIQUE NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_by_ip VARCHAR(50)
+);
+
+-- Password reset tokens
+CREATE TABLE password_resets(
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token VARCHAR(255) UNIQUE NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    used BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Posts Table
@@ -57,7 +85,12 @@ CREATE TABLE post_tags(
     tag_id INTEGER REFERENCES tags(id) ON DELETE CASCADE,
     PRIMARY KEY (post_id,tag_id)
 );
-
+CREATE TABLE post_likes (
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  PRIMARY KEY (user_id, post_id)  -- composite key prevents duplicates at DB level
+);
 -- Create indexes for performance
 CREATE INDEX idx_posts_user_id ON posts(user_id);
 CREATE INDEX idx_posts_status ON posts(status);
@@ -68,6 +101,12 @@ CREATE INDEX idx_comments_user_id ON comments(user_id);
 CREATE INDEX idx_comments_parent_id ON comments(parent_id);
 CREATE INDEX idx_post_tags_post_id ON post_tags(post_id);
 CREATE INDEX idx_post_tags_tag_id ON post_tags(tag_id);
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+CREATE INDEX idx_refresh_tokens_token ON refresh_tokens(token);
+CREATE INDEX idx_password_resets_token ON password_resets(token);
+CREATE INDEX idx_password_resets_user_id ON password_resets(user_id);
 
 -- Full text search index
 CREATE INDEX idx_posts_search ON posts USING GIN(search_vector);
@@ -109,6 +148,12 @@ BEFORE UPDATE ON comments
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER trig_users_updated_at
+  BEFORE UPDATE ON users
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
+  
 -- Sample data if you want to use
 INSERT INTO users (username, email, password_hash, role, bio) VALUES
   ('johndoe', 'john@example.com', 'hashed_password_1', 'admin', 'Admin user'),

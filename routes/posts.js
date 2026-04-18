@@ -6,20 +6,28 @@ import Comment from '../model/Comment.js'
 import Pagination from '../utils/pagination.js'
 import ApiResponse from '../utils/response.js'
 import { asyncHandler } from '../utils/asyncHandler.js';
+import {authenticate,authorize,optionalAuth,requireVerified} from '../middleware/auth.js'
+import {validatePost} from '../middleware/validation.js'
 
 // GET /api/posts - List posts with filters and pagination
-router.get('/',asyncHandler(async(req,res,next)=>{
+router.get('/',optionalAuth,asyncHandler(async(req,res,next)=>{
     try {
         const {page = 1,limit = 10,status,userId,search,tag} = req.query;
         const {limit:pLimit,offset,page:pPage} = Pagination.paginate(page,limit);
         const filters = {
             limit:pLimit,
             offset,
-            status,
             userId,
             search,
             tag
         }
+        if(!req.user || req.user.role !=='admin'){
+          filters.status = 'published'
+        }
+        else if(status){
+          filters.status = status;
+        }
+
         const {posts,total} = await Post.findAll(filters)
         const response = Pagination.buildResponse(posts,total,pPage,pLimit)
         ApiResponse.success(res,response)
@@ -28,8 +36,21 @@ router.get('/',asyncHandler(async(req,res,next)=>{
     }
 }))
 
+// GET /api/posts/my - Get current user's posts
+router.get('/my',authenticate,async(req,res,next)=>{
+  try {
+    const posts = await Post.findAll({userId:req.user.id})
+     res.json({
+       success: true,
+       data: { posts, count: posts.length },
+     });
+  } catch (error) {
+    next(error)
+  }
+})
+
 // GET /api/posts/:slug - Get single post
-router.get('/:slug',asyncHandler(async(req,res,next)=>{
+router.get('/:slug',optionalAuth,asyncHandler(async(req,res,next)=>{
     try {
         const { slug } = req.params;
         const { includeComments } = req.query;
@@ -42,7 +63,16 @@ router.get('/:slug',asyncHandler(async(req,res,next)=>{
         if (!post) {
           return ApiResponse.error(res, "Post not found", 404);
         }
-        
+        // Check if user can view this post
+        if(post.status !== 'published'){
+          // Only author and admins can view unpublished posts
+          if(!req.user || (req.user.id !==post.user_id && req.user.role !=='admin')){
+            return res.status(403).json({
+              success: false,
+              message: "Access denied",
+            });
+          }
+        }
         // Increment view count
         await Post.incrementViews(slug);
         ApiResponse.success(res,{post})
@@ -51,8 +81,8 @@ router.get('/:slug',asyncHandler(async(req,res,next)=>{
     }
 }))
 
-// POST /api/posts - Create post
-router.post('/', asyncHandler(async (req, res, next) => {
+// POST /api/posts - Create post (authenticated users with author or admin role)
+router.post('/',authenticate,requireVerified,authorize('author','admin'),validatePost,asyncHandler(async (req, res, next) => {
   try {
     const { title, content, excerpt, featured_image, status, tags } = req.body;
     
@@ -61,8 +91,8 @@ router.post('/', asyncHandler(async (req, res, next) => {
       return ApiResponse.error(res, 'title and content are required', 400);
     }
     
-    // In real app, get user_id from auth token
-    const user_id = req.body.user_id;
+    
+    const user_id = req.user.id;
     
     if(!user_id){
         return ApiResponse.error(
@@ -87,11 +117,26 @@ router.post('/', asyncHandler(async (req, res, next) => {
 }));
 
 // PUT /api/posts/:slug - Update post
-router.put('/:slug', asyncHandler(async (req, res, next) => {
+router.put('/:slug',authenticate,validatePost, asyncHandler(async (req, res, next) => {
   try {
     const { slug } = req.params;
     const { title, content, excerpt, featured_image, status, tags } = req.body;
-    
+    // Get existing post
+    const existingPost = await Post.findBySlug(slug);
+    if(!existingPost){
+      return res.status(404).json({
+        success: false,
+        message: "Post not found",
+      });
+    }
+    // Check ownership (author or admin)
+    if(existingPost.user_id !== req.user.id && req.user.role !=='admin'){
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to edit this post",
+      });
+    }
+
     const post = await Post.updatePost(
       slug,
       { title, content, excerpt, featured_image, status },
@@ -107,16 +152,27 @@ router.put('/:slug', asyncHandler(async (req, res, next) => {
   }
 }));
 
-// DELETE /api/posts/:slug - Delete post
-router.delete('/:slug', asyncHandler(async (req, res, next) => {
+// DELETE /api/posts/:slug - Delete post (author or admin)
+router.delete('/:slug',authenticate, asyncHandler(async (req, res, next) => {
   try {
     const { slug } = req.params;
-    
-    const post = await Post.deletePost(slug);
-    
-    if (!post) {
-      return ApiResponse.error(res, 'Post not found', 404);
+    // Get existing post
+    const existingPost = await Post.findBySlug(slug);
+
+    if (!existingPost) {
+      return res.status(404).json({
+        success: false,
+        message: "Post not found",
+      });
     }
+    // Check ownership
+    if(req.user.id !== existingPost.user_id && req.user.role !== 'admin'){
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to delete this post",
+      });
+    }
+     await Post.deletePost(slug);
     
     ApiResponse.noContent(res);
   } catch (error) {
@@ -125,17 +181,24 @@ router.delete('/:slug', asyncHandler(async (req, res, next) => {
 }));
 
 // POST /api/posts/:slug/like - Like post
-router.post('/:slug/like', asyncHandler(async (req, res, next) => {
+router.post('/:slug/like',authenticate, asyncHandler(async (req, res, next) => {
   try {
     const { slug } = req.params;
-    
-    const result = await Post.toggleLike(slug, true);
+    const userId = req.user.id
+    const post = await Post.findBySlug(slug);
+    if (!post) {
+      return res.status(404).json({
+        success: false,
+        message: "Post not found",
+      });
+    }
+    const result = await Post.toggleLike(slug, userId);
     
     if (!result) {
       return ApiResponse.error(res, 'Post not found', 404);
     }
     
-    ApiResponse.success(res, { likeCount: result.like_count });
+    ApiResponse.success(res, { likeCount: result.like_count,liked:result.liked });
   } catch (error) {
     next(error);
   }
@@ -143,11 +206,13 @@ router.post('/:slug/like', asyncHandler(async (req, res, next) => {
 
 // POST /api/posts/:slug/comments - Add comment to post
 
-router.post('/:slug/comments',asyncHandler(async(req,res,next)=>{
+router.post('/:slug/comments',authenticate,asyncHandler(async(req,res,next)=>{
     try {
       const {slug} = req.params;
       const {content,parent_id} = req.body;
-       if (!content) {
+      const user_id = req.user.id; 
+       
+      if (!content || content.trim().length < 1) {
          return ApiResponse.error(res, "content is required", 400);
        }
 
@@ -157,8 +222,14 @@ router.post('/:slug/comments',asyncHandler(async(req,res,next)=>{
        if (!post) {
          return ApiResponse.error(res, "Post not found", 404);
        }
-
-       const user_id = req.body.user_id; 
+       // Only allow comments on published posts (unless u are the author or admin)
+       if(post.status !=='published' && post.user_id !== req.user.id && req.user.role !== 'admin'){
+        return res.status(403).json({
+          success:false,
+          message:'Cannot comment on unpublished posts'
+        })
+       }
+       
        if (!user_id) {
          return ApiResponse.error(res, "User id is required!", 400);
        }

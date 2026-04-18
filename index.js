@@ -4,7 +4,8 @@ import cors from 'cors'
 import helmet from 'helmet'
 import morgan from 'morgan'
 import {pool} from './config/db.js'
-
+import cookieParser from 'cookie-parser'
+import authRoutes from './routes/auth.js'
 import postRoutes from './routes/posts.js'
 import tagRoutes from './routes/tags.js'
 import commentRoutes from './routes/comments.js'
@@ -15,14 +16,20 @@ const PORT = process.env.PORT || 3000;
 
 // Security middlewares
 app.use(helmet())
-app.use(cors())
-
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    credentials: true,
+  }),
+);
 // Logging
-app.use(morgan('dev'))
-
+if (process.env.NODE_ENV === 'development') {
+  app.use(morgan('dev'));
+}
 // Body parsing
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 // Routes
 app.get('/', (req, res) => {
@@ -59,6 +66,7 @@ app.get("/api/health", async (req, res) => {
 app.use("/api/posts", postRoutes);
 app.use("/api/tags", tagRoutes);
 app.use("/api/comments", commentRoutes);
+app.use("/api/auth", authRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -69,6 +77,13 @@ app.use((req, res) => {
   });
 });
 
+// 404
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'Endpoint not found'
+  });
+});
 
 // Error handler
 app.use(errorHandler);
@@ -78,6 +93,12 @@ app.listen(PORT, () => {
   console.log(`\n Blog API running on http://localhost:${PORT}`);
   console.log('\n API Documentation:');
   console.log('─'.repeat(50));
+  console.log('\nUsers:')
+   console.log("POST   /api/auth/register");
+   console.log("POST   /api/auth/login");
+   console.log("POST   /api/auth/refresh");
+   console.log("POST   /api/auth/logout");
+   console.log("POST   /api/auth/logout-all");
   console.log('\nPosts:');
   console.log('  GET    /api/posts');
   console.log('  GET    /api/posts/:slug');
