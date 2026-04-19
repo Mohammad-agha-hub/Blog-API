@@ -32,7 +32,7 @@ class User {
 
   // Find user by ID (without password)
   static async findById(id) {
-    const result = await db.query(
+    const result = await query(
       `SELECT id, username, email, role, is_verified, is_active, 
               last_login, created_at, updated_at
        FROM users WHERE id = $1`,

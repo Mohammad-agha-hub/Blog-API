@@ -40,9 +40,9 @@ router.delete('/:id',authenticate, asyncHandler(async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    const result = await Comment.getCommentWithPostInfo(id);
+    const comment = await Comment.getCommentWithPostInfo(id);
 
-    if (result.rows.length === 0) {
+    if (!comment) {
       return res.status(404).json({
         success: false,
         message: "Comment not found",

@@ -2,6 +2,8 @@ import express from 'express'
 import Tag from '../model/Tag.js'
 import ApiResponse from '../utils/response.js'
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { authenticate, authorize } from "../middleware/auth.js";
+
 const router = express.Router();
 
 // GET /api/tags - Get all tags
@@ -30,7 +32,7 @@ router.get("/:slug", asyncHandler(async (req, res, next) => {
 }));
 
 // POST /api/tags - Create tag
-router.post('/', asyncHandler(async (req, res, next) => {
+router.post('/',authenticate,authorize('admin'), asyncHandler(async (req, res, next) => {
 try {
 const { name, description } = req.body;
 if (!name) {
@@ -48,7 +50,7 @@ next(error);
 }));
 
 // PUT /api/tags/:slug - Update tag
-router.put('/:slug',asyncHandler( async (req, res, next) => {
+router.put('/:slug',authenticate,authorize('admin'),asyncHandler( async (req, res, next) => {
 try {
 const { slug } = req.params;
 const { name, description } = req.body;
@@ -65,7 +67,7 @@ next(error);
 }));
 
 // DELETE /api/tags/:slug - Delete tag
-router.delete('/:slug',asyncHandler( async (req, res, next) => {
+router.delete('/:slug',authenticate,authorize('admin'),asyncHandler( async (req, res, next) => {
 try {
 const { slug } = req.params;
 const tag = await Tag.deleteTag(slug);

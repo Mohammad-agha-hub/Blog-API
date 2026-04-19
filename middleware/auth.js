@@ -1,5 +1,5 @@
 import JWTService from "../utils/jwt.js";
-import User from "../models/User.js";
+import User from "../model/User.js";
 
 // Authenticate user from jwt token
 const authenticate = async (req, res, next) => {
@@ -44,6 +44,7 @@ const authenticate = async (req, res, next) => {
       role: user.role,
       isVerified: user.is_verified,
     };
+    next()
   } catch (error) {
     console.error("Authentication error:", error);
     res.status(500).json({

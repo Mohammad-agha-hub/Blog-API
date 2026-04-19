@@ -4,13 +4,8 @@ class Comment {
   // Get existing comment
   static async findExisting(id){
     const result = await query('SELECT * FROM comments WHERE id = $1',[id])
-    if(result.rows.length === 0){
-      return res.status(404).json({
-        success: false,
-        message: "Comment not found",
-      });
-    }
-    return result.rows;
+    
+    return result.rows || null;
   }
   // Get comments for a post
   static async findByPost(postId) {
@@ -52,6 +47,7 @@ class Comment {
     if(!result.rows[0]){
       throw new Error('Comment not found!')
     }
+    return result.rows[0]
   }
   // Delete comment
   static async deleteComment(id) {
