@@ -1,7 +1,3 @@
--- Blog API Schema
-DROP TABLE IF EXISTS refresh_tokens CASCADE;
-DROP TABLE IF EXISTS password_resets CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
 
 -- Users table
 CREATE TABLE users(
@@ -148,12 +144,7 @@ BEFORE UPDATE ON comments
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER trig_users_updated_at
-  BEFORE UPDATE ON users
-  FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at_column();
 
-  
 -- Sample data if you want to use
 INSERT INTO users (username, email, password_hash, role, bio) VALUES
   ('johndoe', 'john@example.com', 'hashed_password_1', 'admin', 'Admin user'),
